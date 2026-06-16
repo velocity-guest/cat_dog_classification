@@ -1,0 +1,21 @@
+# PyCharm
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+yolo1/
+
+# Dataset
+data/
+
+# Model Weights
+models/
+*.pth
+*.pt
+
+# Logs
+logs/
+*.log
