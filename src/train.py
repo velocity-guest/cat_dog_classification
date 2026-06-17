@@ -9,13 +9,21 @@ from torchvision import datasets
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
-from model import CatDogCNN
+from model import create_model
 
+
+# ======================
+# 日志配置
+# ======================
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+# ======================
+# 路径配置
+# ======================
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -27,10 +35,17 @@ MODEL_DIR.mkdir(exist_ok=True)
 
 MODEL_PATH = MODEL_DIR / "best_model.pth"
 
-BATCH_SIZE = 64
-EPOCHS = 10
-LEARNING_RATE = 0.001
+# ======================
+# 超参数
+# ======================
 
+BATCH_SIZE = 32
+EPOCHS = 50
+LEARNING_RATE = 0.0001
+
+# ======================
+# 验证函数
+# ======================
 
 def evaluate(model, val_loader, device):
 
@@ -48,33 +63,74 @@ def evaluate(model, val_loader, device):
 
             outputs = model(images)
 
-            _, predicted = torch.max(outputs, 1)
+            _, predicted = torch.max(
+                outputs,
+                1
+            )
 
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+
+            correct += (
+                predicted == labels
+            ).sum().item()
 
     return 100 * correct / total
 
 
+# ======================
+# 主函数
+# ======================
+
 def main():
 
     device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
+        "cuda"
+        if torch.cuda.is_available()
+        else "cpu"
     )
 
     print(f"Using device: {device}")
 
+    # ======================
+    # 数据增强
+    # ======================
+
     train_transform = transforms.Compose([
-        transforms.Resize((128, 128)),
+
+        transforms.Resize((224, 224)),
+
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(10),
-        transforms.ToTensor()
+
+        transforms.RandomRotation(15),
+
+        transforms.ColorJitter(
+            brightness=0.2,
+            contrast=0.2
+        ),
+
+        transforms.ToTensor(),
+
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
     ])
 
     val_transform = transforms.Compose([
-        transforms.Resize((128, 128)),
-        transforms.ToTensor()
+
+        transforms.Resize((224, 224)),
+
+        transforms.ToTensor(),
+
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
     ])
+
+    # ======================
+    # 数据集
+    # ======================
 
     train_dataset = datasets.ImageFolder(
         root=TRAIN_DIR,
@@ -100,20 +156,59 @@ def main():
         num_workers=0
     )
 
-    print("Train samples:", len(train_dataset))
-    print("Val samples:", len(val_dataset))
-    print("Classes:", train_dataset.classes)
+    print(
+        "Train samples:",
+        len(train_dataset)
+    )
 
-    model = CatDogCNN().to(device)
+    print(
+        "Val samples:",
+        len(val_dataset)
+    )
+
+    print(
+        "Classes:",
+        train_dataset.classes
+    )
+
+    # ======================
+    # 模型
+    # ======================
+
+    model = create_model()
+
+    # 冻结特征提取层
+
+    for param in model.parameters():
+
+        param.requires_grad = False
+
+    # 仅训练最后分类层
+
+    for param in model.fc.parameters():
+
+        param.requires_grad = True
+
+    model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
 
     optimizer = optim.Adam(
-        model.parameters(),
+        model.fc.parameters(),
         lr=LEARNING_RATE
     )
 
+    scheduler = optim.lr_scheduler.StepLR(
+        optimizer,
+        step_size=5,
+        gamma=0.5
+    )
+
     best_acc = 0.0
+
+    # ======================
+    # 训练
+    # ======================
 
     try:
 
@@ -123,17 +218,27 @@ def main():
 
             running_loss = 0.0
 
-            print(f"\n===== Epoch {epoch + 1}/{EPOCHS} =====")
+            print(
+                f"\n===== Epoch "
+                f"{epoch + 1}/{EPOCHS} ====="
+            )
 
-            for batch_idx, (images, labels) in enumerate(train_loader):
+            for batch_idx, (
+                images,
+                labels
+            ) in enumerate(train_loader):
 
                 if batch_idx % 20 == 0:
+
                     print(
                         f"Epoch {epoch + 1} | "
-                        f"Batch {batch_idx}/{len(train_loader)}"
+                        f"Batch "
+                        f"{batch_idx}/"
+                        f"{len(train_loader)}"
                     )
 
                 images = images.to(device)
+
                 labels = labels.to(device)
 
                 optimizer.zero_grad()
@@ -151,7 +256,12 @@ def main():
 
                 running_loss += loss.item()
 
-            avg_loss = running_loss / len(train_loader)
+            scheduler.step()
+
+            avg_loss = (
+                running_loss /
+                len(train_loader)
+            )
 
             val_acc = evaluate(
                 model,
@@ -159,19 +269,30 @@ def main():
                 device
             )
 
+            current_lr = (
+                optimizer
+                .param_groups[0]["lr"]
+            )
+
             print(
-                f"Epoch [{epoch + 1}/{EPOCHS}] "
-                f"Loss: {avg_loss:.4f} "
-                f"Val Acc: {val_acc:.2f}%"
+                f"Epoch "
+                f"[{epoch + 1}/{EPOCHS}] "
+                f"Loss: "
+                f"{avg_loss:.4f} "
+                f"Val Acc: "
+                f"{val_acc:.2f}% "
+                f"LR: "
+                f"{current_lr:.6f}"
             )
 
             logging.info(
-                f"Epoch [{epoch + 1}/{EPOCHS}] "
+                f"Epoch "
+                f"[{epoch + 1}/{EPOCHS}] "
                 f"Loss={avg_loss:.4f} "
                 f"ValAcc={val_acc:.2f}"
             )
 
-            if val_acc > best_acc:
+            if val_acc >= best_acc:
 
                 best_acc = val_acc
 
@@ -193,8 +314,16 @@ def main():
         print(e)
 
     print("\nTraining Finished")
-    print(f"Best Accuracy: {best_acc:.2f}%")
-    print(f"Model Saved: {MODEL_PATH}")
+
+    print(
+        f"Best Accuracy: "
+        f"{best_acc:.2f}%"
+    )
+
+    print(
+        f"Model Saved: "
+        f"{MODEL_PATH}"
+    )
 
 
 if __name__ == "__main__":

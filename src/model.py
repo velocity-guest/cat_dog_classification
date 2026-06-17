@@ -1,60 +1,37 @@
-import torch
 import torch.nn as nn
 
+from torchvision.models import (
+    resnet50,
+    ResNet50_Weights
+)
 
-class CatDogCNN(nn.Module):
 
-    def __init__(self):
-        super(CatDogCNN, self).__init__()
+def create_model():
 
-        self.features = nn.Sequential(
+    model = resnet50(
+        weights=ResNet50_Weights.IMAGENET1K_V2
+    )
 
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
+    model.fc = nn.Sequential(
+        nn.Dropout(0.5),
 
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-
-            nn.AdaptiveAvgPool2d(1)
+        nn.Linear(
+            model.fc.in_features,
+            2
         )
+    )
 
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-
-            nn.Linear(256, 128),
-            nn.ReLU(inplace=True),
-
-            nn.Dropout(0.5),
-
-            nn.Linear(128, 2)
-        )
-
-    def forward(self, x):
-
-        x = self.features(x)
-        x = self.classifier(x)
-
-        return x
+    return model
 
 
 if __name__ == "__main__":
 
-    model = CatDogCNN()
+    model = create_model()
 
-    x = torch.randn(4, 3, 128, 128)
+    total_params = sum(
+        p.numel()
+        for p in model.parameters()
+    )
 
-    y = model(x)
-
-    print("模型结构测试成功")
-    print("输入尺寸:", x.shape)
-    print("输出尺寸:", y.shape)
+    print("ResNet50加载成功")
+    print(f"参数量: {total_params:,}")
